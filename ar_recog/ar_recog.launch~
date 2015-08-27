@@ -1,0 +1,10 @@
+<launch>
+        <rosparam param="joy_node/dev">/dev/input/js0</rosparam>
+    	<rosparam param="aov">0.67>/home/fuerte/ros/brown-ros-pkg/experimental/ar_recog/bin</rosparam>
+        
+       
+        <node name="ar_recog" pkg="ar_recog" type="ar_recog" cwd="node" args="image:=drone0/ardrone/image_raw" output="screen" />
+        
+	<node name="nolan" pkg="nolan" type="nolan.py" output="screen"/>
+        <node name="rviz" pkg="rviz" type="rviz" />
+</launch>

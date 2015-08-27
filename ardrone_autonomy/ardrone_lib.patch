@@ -1,0 +1,248 @@
+diff --git a/ARDroneLib/FFMPEG/Makefile b/ARDroneLib/FFMPEG/Makefile
+index 0b96558..0c101a0 100644
+--- a/ARDroneLib/FFMPEG/Makefile
++++ b/ARDroneLib/FFMPEG/Makefile
+@@ -40,6 +40,8 @@ ifneq ($(FFMPEG_ARCHIVE_ROOTDIR), ffmpeg/)
+ 	$(SILENT_MAKE)rm -rf $(FFMPEG_ARCHIVE_ROOTDIR)
+ endif
+ 	$(SILENT_MAKE)tar xzf parrot_ffmpeg_build_utils.tar.gz
++	# Extra pacth to remove deprecated warnings
++	$(SILENT_MAKE)sed -i "s/check_cflags -Wall/check_cflags -Wall\ncheck_cflags -Wno-deprecated-declarations/g" ffmpeg/configure
+ 	$(SILENT_MAKE)echo "Done"
+ endif
+ endif
+diff --git a/ARDroneLib/Soft/Common/config.h b/ARDroneLib/Soft/Common/config.h
+index ba83536..033df51 100644
+--- a/ARDroneLib/Soft/Common/config.h
++++ b/ARDroneLib/Soft/Common/config.h
+@@ -86,16 +86,17 @@
+ 
+ #define WIFI_PASSKEY            "9F1C3EE11CBA230B27BF1C1B6F"
+ 
+-#define FTP_PORT				5551
+-#define AUTH_PORT				5552
+-#define VIDEO_RECORDER_PORT     5553
+-#define NAVDATA_PORT            5554
+-#define VIDEO_PORT              5555
+-#define AT_PORT                 5556
+-#define RAW_CAPTURE_PORT        5557
+-#define PRINTF_PORT             5558
+-#define CONTROL_PORT            5559
+-
++// Replace constants with variables (see ../Lib/ardrone_tool/ardrone_tool.*)
++// Using unconvential all-caps to minimize impact on rest of code
++extern unsigned short FTP_PORT;
++extern unsigned short AUTH_PORT;
++extern unsigned short VIDEO_RECORDER_PORT;
++extern unsigned short NAVDATA_PORT;
++extern unsigned short VIDEO_PORT;
++extern unsigned short AT_PORT;
++extern unsigned short RAW_CAPTURE_PORT;
++extern unsigned short PRINTF_PORT;
++extern unsigned short CONTROL_PORT;
+ ///////////////////////////////////////////////
+ // Wired configuration
+ 
+diff --git a/ARDroneLib/Soft/Lib/ardrone_tool/AT/ardrone_at_mutex.c b/ARDroneLib/Soft/Lib/ardrone_tool/AT/ardrone_at_mutex.c
+index 67bfdfc..f96c262 100644
+--- a/ARDroneLib/Soft/Lib/ardrone_tool/AT/ardrone_at_mutex.c
++++ b/ARDroneLib/Soft/Lib/ardrone_tool/AT/ardrone_at_mutex.c
+@@ -138,8 +138,9 @@ AT_CODEC_ERROR_CODE host_open( void )
+ 
+   if( !init_ok )
+   {
+-    COM_CONFIG_SOCKET_AT(&at_socket, VP_COM_CLIENT, AT_PORT, wifi_ardrone_ip);
++    COM_CONFIG_SOCKET_AT(&at_socket, VP_COM_CLIENT, 0, wifi_ardrone_ip);
+     at_socket.protocol = VP_COM_UDP;
++    at_socket.remotePort = AT_PORT;
+ 
+     if(VP_FAILED(vp_com_init(COM_AT())))
+     {
+diff --git a/ARDroneLib/Soft/Lib/ardrone_tool/Navdata/ardrone_navdata_client.c b/ARDroneLib/Soft/Lib/ardrone_tool/Navdata/ardrone_navdata_client.c
+index fb35ded..278a72f 100644
+--- a/ARDroneLib/Soft/Lib/ardrone_tool/Navdata/ardrone_navdata_client.c
++++ b/ARDroneLib/Soft/Lib/ardrone_tool/Navdata/ardrone_navdata_client.c
+@@ -36,10 +36,11 @@ C_RESULT ardrone_navdata_client_init(void)
+ {
+   C_RESULT res;
+ 
+-  COM_CONFIG_SOCKET_NAVDATA(&navdata_socket, VP_COM_CLIENT, NAVDATA_PORT, wifi_ardrone_ip);
++  COM_CONFIG_SOCKET_NAVDATA(&navdata_socket, VP_COM_CLIENT, 0, wifi_ardrone_ip);
+   navdata_socket.protocol = VP_COM_UDP;
+   navdata_socket.is_multicast = 0;      // disable multicast for Navdata
+   navdata_socket.multicast_base_addr = MULTICAST_BASE_ADDR;
++  navdata_socket.remotePort = NAVDATA_PORT;
+ 
+   vp_os_mutex_init(&navdata_client_mutex);
+   vp_os_cond_init(&navdata_client_condition, &navdata_client_mutex);
+diff --git a/ARDroneLib/Soft/Lib/ardrone_tool/Video/video_stage.c b/ARDroneLib/Soft/Lib/ardrone_tool/Video/video_stage.c
+index 967808a..2368028 100644
+--- a/ARDroneLib/Soft/Lib/ardrone_tool/Video/video_stage.c
++++ b/ARDroneLib/Soft/Lib/ardrone_tool/Video/video_stage.c
+@@ -96,7 +96,8 @@ DEFINE_THREAD_ROUTINE(video_stage, data) {
+     icc_udp.com = COM_VIDEO();
+     icc_udp.buffer_size = (1024*1024);
+     icc_udp.protocol = VP_COM_UDP;
+-    COM_CONFIG_SOCKET_VIDEO(&icc_udp.socket, VP_COM_CLIENT, VIDEO_PORT, wifi_ardrone_ip);
++    COM_CONFIG_SOCKET_VIDEO(&icc_udp.socket, VP_COM_CLIENT, 0, wifi_ardrone_ip);
++    icc_udp.socket.remotePort = VIDEO_PORT;
+ 
+     icc.nb_sockets = 2;
+     icc.configs = icc_tab;
+diff --git a/ARDroneLib/Soft/Lib/ardrone_tool/ardrone_tool.c b/ARDroneLib/Soft/Lib/ardrone_tool/ardrone_tool.c
+index 8466d4c..4142c21 100644
+--- a/ARDroneLib/Soft/Lib/ardrone_tool/ardrone_tool.c
++++ b/ARDroneLib/Soft/Lib/ardrone_tool/ardrone_tool.c
+@@ -332,11 +332,11 @@ int ardrone_tool_main(int argc, char **argv)
+     argc--; argv++;
+   }
+ 
+-  if( show_usage || (argc != 0) )
++  /*if( show_usage || (argc != 0) )
+   {
+     ardrone_tool_usage( appname );
+     exit(-1);
+-  }
++  }*/
+   
+   /* After a first analysis, the arguments are restored so they can be passed to the user-defined functions */
+   argc=argc_backup;
+@@ -420,6 +420,28 @@ int ardrone_tool_main(int argc, char **argv)
+   return SUCCEED(res) ? 0 : -1;
+ }
+ 
++// Set default ports for variables that replace old constants
++unsigned short FTP_PORT                 = 5551;
++unsigned short AUTH_PORT                = 5552;
++unsigned short VIDEO_RECORDER_PORT      = 5553;
++unsigned short NAVDATA_PORT             = 5554;
++unsigned short VIDEO_PORT               = 5555;
++unsigned short AT_PORT                  = 5556;
++unsigned short RAW_CAPTURE_PORT         = 5557;
++unsigned short PRINTF_PORT              = 5558;
++unsigned short CONTROL_PORT             = 5559;
++ 
++// Provide port setter functions for application
++void set_FTP_PORT(uint16_t p) { FTP_PORT = p; }
++void set_AUTH_PORT(uint16_t p) { AUTH_PORT = p; }
++void set_VIDEO_RECORDER_PORT(uint16_t p) { VIDEO_RECORDER_PORT = p; }
++void set_NAVDATA_PORT(uint16_t p) { NAVDATA_PORT = p; }
++void set_VIDEO_PORT(uint16_t p) { VIDEO_PORT = p; }
++void set_AT_PORT(uint16_t p) { AT_PORT = p; }
++void set_RAW_CAPTURE_PORT(uint16_t p) { RAW_CAPTURE_PORT = p; }
++void set_PRINTF_PORT(uint16_t p) { PRINTF_PORT = p; }
++void set_CONTROL_PORT(uint16_t p) { CONTROL_PORT = p; }
++
+ // Default implementation for weak functions
+ #ifndef _WIN32
+ 	C_RESULT ardrone_tool_init_custom(void) { return C_OK; }
+diff --git a/ARDroneLib/Soft/Lib/ardrone_tool/ardrone_tool.h b/ARDroneLib/Soft/Lib/ardrone_tool/ardrone_tool.h
+index a081c9a..4828d85 100644
+--- a/ARDroneLib/Soft/Lib/ardrone_tool/ardrone_tool.h
++++ b/ARDroneLib/Soft/Lib/ardrone_tool/ardrone_tool.h
+@@ -66,12 +66,25 @@ C_RESULT ardrone_tool_shutdown(void);
+ 
+ void ardrone_tool_init_timers_and_mutex();
+ void ardrone_tool_send_com_watchdog(void); // To send it only once
+-int main();
++//int main();
+ 
+ // There because not defined in embedded
+ void api_configuration_get_ctrl_mode(void);
+ void api_configuration_ack_ctrl_mode(void);
+ 
++
++// Provide port setter functions for application
++void set_FTP_PORT(uint16_t p);
++void set_AUTH_PORT(uint16_t p);
++void set_VIDEO_RECORDER_PORT(uint16_t p);
++void set_NAVDATA_PORT(uint16_t p);
++void set_VIDEO_PORT(uint16_t p);
++void set_AT_PORT(uint16_t p);
++void set_RAW_CAPTURE_PORT(uint16_t p);
++void set_PRINTF_PORT(uint16_t p);
++void set_CONTROL_PORT(uint16_t p);
++
++
+ /*! \page page2
+  * @defgroup ARDrone_Tool ARDrone_Tool
+ 
+diff --git a/ARDroneLib/VP_SDK/Build/Makefile b/ARDroneLib/VP_SDK/Build/Makefile
+index bda3259..27418d2 100644
+--- a/ARDroneLib/VP_SDK/Build/Makefile
++++ b/ARDroneLib/VP_SDK/Build/Makefile
+@@ -105,6 +105,10 @@ define ADD_RULE_TEMPLATE
+   ifeq ($(USE_ANDROID),yes)
+      build_lib: build_$(1)
+   endif
++# Following three lines added after more than four hours of WTF debugging -- mani
++  ifeq ($(USE_LINUX),yes)
++     build_lib: build_$(1)
++  endif
+   endif
+   endif
+   endif
+diff --git a/ARDroneLib/VP_SDK/Build/generic.makefile b/ARDroneLib/VP_SDK/Build/generic.makefile
+index 91895b3..94d1cb8 100644
+--- a/ARDroneLib/VP_SDK/Build/generic.makefile
++++ b/ARDroneLib/VP_SDK/Build/generic.makefile
+@@ -35,10 +35,25 @@ INTERNAL_MKDIR=mkdir -p
+ INTERNAL_ECHO=echo
+ 
+ # (in) GENERIC_COMMAND_PREFIX
++
++# solve problem with system-wide ccache:
++# gcc is in different folder (/usr/lib/ccache) than and ar,objdump and strip.
++# This is only a hack to fix this issue
+ INTERNAL_CC:=$(GENERIC_COMMAND_PREFIX)gcc
+-INTERNAL_AR:=$(GENERIC_COMMAND_PREFIX)ar
+-INTERNAL_OBJCOPY:=$(GENERIC_COMMAND_PREFIX)objcopy
+-INTERNAL_STRIP:=$(GENERIC_COMMAND_PREFIX)strip
++
++ifneq (,$(findstring ccache,$(GENERIC_COMMAND_PREFIX)))
++    # Found ccache
++    NON_TOOLCHAIN_PATH=$(shell which ar | sed "s:/ar::")
++    NON_GENERIC_COMMAND_PREFIX=$(NON_TOOLCHAIN_PATH)/
++    INTERNAL_AR:=$(NON_GENERIC_COMMAND_PREFIX)ar
++    INTERNAL_OBJCOPY:=$(NON_GENERIC_COMMAND_PREFIX)objcopy
++    INTERNAL_STRIP:=$(NON_GENERIC_COMMAND_PREFIX)strip
++else
++    INTERNAL_AR:=$(GENERIC_COMMAND_PREFIX)ar
++    INTERNAL_OBJCOPY:=$(GENERIC_COMMAND_PREFIX)objcopy
++    INTERNAL_STRIP:=$(GENERIC_COMMAND_PREFIX)strip
++endif
++
+ 
+ # (in) GENERIC_CFLAGS
+ # (in) GENERIC_LDFLAGS
+diff --git a/Makefile b/Makefile
+new file mode 100644
+index 0000000..2ad03a2
+--- /dev/null
++++ b/Makefile
+@@ -0,0 +1,25 @@
++SDK_PATH:=$(shell pwd)/ARDroneLib
++PC_TARGET=yes
++USE_LINUX=yes
++
++
++ifdef MYKONOS
++   include $(ARDRONE_CUSTOM_CONFIG)
++   include $(ARDRONE_BUILD_CONFIG)
++else
++   include $(SDK_PATH)/Soft/Build/custom.makefile
++   include $(SDK_PATH)/Soft/Build/config.makefile
++endif
++
++$(SDK_TARGET_DIR)
++
++SDK_FLAGS+="USE_APP=no"
++SDK_FLAGS+="USE_LIB=yes"
++
++all: 
++	@$(MAKE) -C $(SDK_PATH)/Soft/Build $(TMP_SDK_FLAGS) $(SDK_FLAGS) $(MAKECMDGOALS) USE_LINUX=yes
++	@$(MAKE) -C $(SDK_PATH)/VP_SDK/Build $(TMP_SDK_FLAGS) $(SDK_FLAGS) $(MAKECMDGOALS) USE_LINUX=yes
++              
++install:
++	mkdir -p ${INSTALL_PREFIX}
++	find $(SDK_PATH)/Soft/Build -type f -name '*.a' -exec cp '{}' ${INSTALL_PREFIX} \;
